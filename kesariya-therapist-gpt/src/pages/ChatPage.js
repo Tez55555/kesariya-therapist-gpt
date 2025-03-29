@@ -1,32 +1,67 @@
-import React, { useState } from 'react';
-import VoiceInput from '../components/VoiceInput';
-import speakText from '../components/VoiceOutput';
-import { fetchGPTResponse } from '../api/gptHandler';
-import { storyPromptBase } from '../prompts/storyOnlyGPTPrompt';
-import { getPromptByFaith } from '../utils/faithRouter';
+import React, { useState, useRef } from 'react';
+import axios from 'axios';
 
-const ChatPage = () => {
-  const [conversation, setConversation] = useState([]);
-  const userFaith = 'hindu'; // TODO: Replace with selector or memory later
+function ChatPage() {
+  const [messages, setMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const inputRef = useRef();
 
-  const handleUserInput = async (transcript) => {
-    setConversation(prev => [...prev, { role: 'user', text: transcript }]);
-    const fullPrompt = getPromptByFaith(userFaith) + `\nUser said: "${transcript}"\nRespond with a matching story.`;
-    const response = await fetchGPTResponse(fullPrompt);
-    setConversation(prev => [...prev, { role: 'ai', text: response }]);
-    speakText(response);
+  const handleSend = async () => {
+    const input = inputRef.current.value.trim();
+    if (!input) return;
+
+    const userMessage = { role: 'user', content: input };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+    inputRef.current.value = '';
+
+    try {
+      const response = await axios.post('/api/gptHandler', { prompt: input });
+      console.log("🧠 GPT Response:", response.data);
+
+      const assistantReply = response.data.reply;
+
+      if (!assistantReply) {
+        throw new Error("Empty GPT reply");
+      }
+
+      const assistantMessage = { role: 'assistant', content: assistantReply };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+    } catch (err) {
+      console.error("🚨 GPT Chat Error:", err.message || err);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '⚠️ No response from GPT. Try again.' },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    <div className="chat-container">
-      <VoiceInput onTranscribe={handleUserInput} />
-      <div className="conversation-log">
-        {conversation.map((msg, index) => (
-          <p key={index}><strong>{msg.role}:</strong> {msg.text}</p>
+    <div style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: 800, margin: 'auto' }}>
+      <h2>🧘 Kesariya Therapist GPT</h2>
+
+      <div style={{ minHeight: '300px', marginBottom: '1rem', border: '1px solid #ccc', padding: '1rem', borderRadius: '8px' }}>
+        {messages.map((msg, i) => (
+          <p key={i}><strong>{msg.role}:</strong> {msg.content}</p>
         ))}
+        {isLoading && <p><em>Thinking...</em></p>}
+      </div>
+
+      <div>
+        <input
+          ref={inputRef}
+          placeholder="Ask your question..."
+          style={{ padding: '0.5rem', width: '70%' }}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        />
+        <button onClick={handleSend} style={{ marginLeft: '1rem' }}>Send</button>
       </div>
     </div>
   );
-};
+}
 
 export default ChatPage;
+
